@@ -1,0 +1,7 @@
+org\example\DelphiInterpreter$ObjectInstance.class
+org\example\DelphiInterpreter.class
+org\example\DelphiParser$InterfaceMemberListContext.class
+org\example\Main.class
+org\example\DelphiParser$InterfaceMethodDeclarationContext.class
+org\example\DelphiParser$InterfaceListContext.class
+org\example\DelphiParser$InterfaceTypeContext.class

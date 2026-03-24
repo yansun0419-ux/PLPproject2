@@ -22,7 +22,8 @@ public class Main {
             "test_loop_control.pas",          // Project 2: while + break + continue
             "test_for_loop.pas",              // Project 2: for-to and for-downto
             "test_routines_scope.pas",        // Project 2: procedures/functions + static scoping
-            "test_routine_params.pas"         // Project 2 bonus: formal parameter passing
+            "test_routine_params.pas",        // Project 2 bonus: formal parameter passing
+            "test_constant_propagation.pas"   // Project 2 bonus: constant folding output
         };
 
         int passedCount = 0;

@@ -16,9 +16,22 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
 
     private ObjectInstance currentSelf = null;
     private final Scanner scanner = new Scanner(System.in);
+    private final boolean printOptimizedAst = true;
 
     private static class BreakSignal extends RuntimeException {}
     private static class ContinueSignal extends RuntimeException {}
+
+    private static class FoldResult {
+        final boolean isConstant;
+        final Object value;
+        final String rendered;
+
+        FoldResult(boolean isConstant, Object value, String rendered) {
+            this.isConstant = isConstant;
+            this.value = value;
+            this.rendered = rendered;
+        }
+    }
 
     private static class Scope {
         private final Scope parent;
@@ -341,7 +354,20 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
     @Override
     public Object visitAssignment(DelphiParser.AssignmentContext ctx) {
         String name = ctx.qualifiedIdentifier().getText().toLowerCase();
-        Object value = visit(ctx.expression());
+        FoldResult folded = foldExpression(ctx.expression());
+        if (printOptimizedAst && folded != null) {
+            String original = ctx.expression().getText();
+            if (!original.equals(folded.rendered)) {
+                System.out.println("[AST-OPT] " + name + " := " + folded.rendered);
+            }
+        }
+
+        Object value;
+        if (folded != null && folded.isConstant) {
+            value = folded.value;
+        } else {
+            value = visit(ctx.expression());
+        }
         assignValue(name, value);
         return value;
     }
@@ -591,6 +617,157 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
     private String parseStringLiteral(String raw) {
         if (raw == null || raw.length() < 2) return "";
         return raw.substring(1, raw.length() - 1).replace("''", "'");
+    }
+
+    private FoldResult foldExpression(DelphiParser.ExpressionContext ctx) {
+        if (ctx == null || ctx.relExpression().isEmpty()) {
+            return new FoldResult(false, null, "");
+        }
+
+        FoldResult result = foldRelExpression(ctx.relExpression(0));
+        for (int i = 1; i < ctx.relExpression().size(); i++) {
+            FoldResult rhs = foldRelExpression(ctx.relExpression(i));
+            String op = ctx.getChild(2 * i - 1).getText().toLowerCase();
+
+            if (result.isConstant && rhs.isConstant) {
+                boolean lv = toBoolean(result.value);
+                boolean rv = toBoolean(rhs.value);
+                int val = op.equals("and") ? ((lv && rv) ? 1 : 0) : ((lv || rv) ? 1 : 0);
+                result = new FoldResult(true, val, String.valueOf(val));
+            } else {
+                result = new FoldResult(false, null, result.rendered + op + rhs.rendered);
+            }
+        }
+
+        return result;
+    }
+
+    private FoldResult foldRelExpression(DelphiParser.RelExpressionContext ctx) {
+        FoldResult left = foldAdditiveExpression(ctx.additiveExpression(0));
+        if (ctx.additiveExpression().size() == 1) {
+            return left;
+        }
+
+        FoldResult right = foldAdditiveExpression(ctx.additiveExpression(1));
+        String op = detectRelOp(ctx);
+
+        if (left.isConstant && right.isConstant) {
+            int l = toInt(left.value);
+            int r = toInt(right.value);
+            int val;
+
+            switch (op) {
+                case ">":
+                    val = (l > r) ? 1 : 0;
+                    break;
+                case "<":
+                    val = (l < r) ? 1 : 0;
+                    break;
+                case "=":
+                    val = (l == r) ? 1 : 0;
+                    break;
+                case "<=":
+                    val = (l <= r) ? 1 : 0;
+                    break;
+                case ">=":
+                    val = (l >= r) ? 1 : 0;
+                    break;
+                case "<>":
+                    val = (l != r) ? 1 : 0;
+                    break;
+                default:
+                    return new FoldResult(false, null, left.rendered + op + right.rendered);
+            }
+
+            return new FoldResult(true, val, String.valueOf(val));
+        }
+
+        return new FoldResult(false, null, left.rendered + op + right.rendered);
+    }
+
+    private FoldResult foldAdditiveExpression(DelphiParser.AdditiveExpressionContext ctx) {
+        FoldResult result = foldTerm(ctx.term(0));
+        for (int i = 1; i < ctx.term().size(); i++) {
+            FoldResult rhs = foldTerm(ctx.term(i));
+            String op = ctx.getChild(2 * i - 1).getText();
+
+            if (result.isConstant && rhs.isConstant) {
+                int l = toInt(result.value);
+                int r = toInt(rhs.value);
+                int val = op.equals("+") ? (l + r) : (l - r);
+                result = new FoldResult(true, val, String.valueOf(val));
+            } else {
+                result = new FoldResult(false, null, result.rendered + op + rhs.rendered);
+            }
+        }
+        return result;
+    }
+
+    private FoldResult foldTerm(DelphiParser.TermContext ctx) {
+        FoldResult result = foldFactor(ctx.factor(0));
+        for (int i = 1; i < ctx.factor().size(); i++) {
+            FoldResult rhs = foldFactor(ctx.factor(i));
+            String op = ctx.getChild(2 * i - 1).getText();
+
+            if (result.isConstant && rhs.isConstant) {
+                int l = toInt(result.value);
+                int r = toInt(rhs.value);
+
+                if (op.equals("*") ) {
+                    result = new FoldResult(true, l * r, String.valueOf(l * r));
+                } else {
+                    if (r == 0) {
+                        result = new FoldResult(false, null, result.rendered + "/" + rhs.rendered);
+                    } else {
+                        int val = l / r;
+                        result = new FoldResult(true, val, String.valueOf(val));
+                    }
+                }
+            } else {
+                result = new FoldResult(false, null, result.rendered + op + rhs.rendered);
+            }
+        }
+        return result;
+    }
+
+    private FoldResult foldFactor(DelphiParser.FactorContext ctx) {
+        if (ctx.INT_LITERAL() != null) {
+            int value = Integer.parseInt(ctx.INT_LITERAL().getText());
+            return new FoldResult(true, value, String.valueOf(value));
+        }
+
+        if (ctx.STRING_LITERAL() != null) {
+            String value = parseStringLiteral(ctx.STRING_LITERAL().getText());
+            return new FoldResult(true, value, "'" + value.replace("'", "''") + "'");
+        }
+
+        if (ctx.methodCall() != null) {
+            return new FoldResult(false, null, ctx.methodCall().getText());
+        }
+
+        if (ctx.qualifiedIdentifier() != null) {
+            return new FoldResult(false, null, ctx.qualifiedIdentifier().getText().toLowerCase());
+        }
+
+        if (ctx.LPAREN() != null) {
+            FoldResult inner = foldExpression(ctx.expression());
+            if (inner.isConstant) {
+                return inner;
+            }
+            return new FoldResult(false, null, "(" + inner.rendered + ")");
+        }
+
+        return new FoldResult(false, null, "0");
+    }
+
+    private String detectRelOp(DelphiParser.RelExpressionContext ctx) {
+        if (ctx.GT() != null) return ">";
+        if (ctx.LT() != null) return "<";
+        if (ctx.EQUAL() != null) return "=";
+        if (ctx.LE() != null) return "<=";
+        if (ctx.GE() != null) return ">=";
+        if (ctx.NOT_EQUAL() != null) return "<>";
+        return "";
     }
 
     private List<Object> evaluateArguments(DelphiParser.ExpressionListContext argsCtx) {

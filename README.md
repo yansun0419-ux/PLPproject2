@@ -26,6 +26,13 @@ The codebase keeps all Project 1 object-oriented features and adds the required 
 - User-defined global procedures and functions
 - Static scoping behavior
 
+### Bonus Features
+- Formal parameter passing in procedures/functions
+- Simple constant folding for compile-time computable subexpressions
+	- Example behavior: `v := 2*(10+11)` is folded to `v := 42`
+	- Example behavior: `v := x + 2*3` is folded to `v := x+6`
+	- The interpreter prints optimized assignment expressions with `[AST-OPT] ...`
+
 ## Static Scoping Rules Used
 - A scope chain is maintained during interpretation.
 - New scopes are created for compound blocks and loop bodies.
@@ -56,6 +63,7 @@ Project 2 tests:
 - test_for_loop.pas
 - test_routines_scope.pas
 - test_routine_params.pas
+- test_constant_propagation.pas
 
 ## Build and Run
 Prerequisites:

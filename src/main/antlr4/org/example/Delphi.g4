@@ -60,7 +60,7 @@ variableDeclaration : identifierList COLON type_ SEMI ;
 identifierList : identifier (COMMA identifier)* ;
 
 // --- 4. Method implementations ---
-implementationSection : methodImplementation+ ;
+implementationSection : (methodImplementation | routineImplementation)+ ;
 methodImplementation
     : CONSTRUCTOR qualifiedIdentifier (formalParameters)? SEMI
       (varSection)?
@@ -80,6 +80,17 @@ methodImplementation
       SEMI
     ;
 
+routineImplementation
+    : PROCEDURE identifier (formalParameters)? SEMI
+      (varSection)?
+      compoundStatement
+      SEMI
+    | FUNCTION identifier (formalParameters)? COLON type_ SEMI
+      (varSection)?
+      compoundStatement
+      SEMI
+    ;
+
 // --- 5. Statement logic ---
 compoundStatement : BEGIN statementList END ;
 statementList : (nonEmptyStatement (SEMI nonEmptyStatement)*)? (SEMI)? ;
@@ -88,10 +99,18 @@ nonEmptyStatement
     : assignment
     | methodCall
     | ifStatement
+  | whileStatement
+  | forStatement
+  | breakStatement
+  | continueStatement
     | compoundStatement
     ;
 
 ifStatement : IF expression THEN nonEmptyStatement (ELSE nonEmptyStatement)? ;
+whileStatement : WHILE expression DO nonEmptyStatement ;
+forStatement : FOR identifier ASSIGN expression (TO | DOWNTO) expression DO nonEmptyStatement ;
+breakStatement : BREAK ;
+continueStatement : CONTINUE ;
 
 assignment : qualifiedIdentifier ASSIGN expression ;
 methodCall : qualifiedIdentifier (LPAREN expressionList? RPAREN)? ;
@@ -138,6 +157,13 @@ FUNCTION: [Ff][Uu][Nn][Cc][Tt][Ii][Oo][Nn];
 IF: [Ii][Ff];
 THEN: [Tt][Hh][Ee][Nn];
 ELSE: [Ee][Ll][Ss][Ee];
+WHILE: [Ww][Hh][Ii][Ll][Ee];
+DO: [Dd][Oo];
+FOR: [Ff][Oo][Rr];
+TO: [Tt][Oo];
+DOWNTO: [Dd][Oo][Ww][Nn][Tt][Oo];
+BREAK: [Bb][Rr][Ee][Aa][Kk];
+CONTINUE: [Cc][Oo][Nn][Tt][Ii][Nn][Uu][Ee];
 
 // Visibility keywords
 PUBLIC: [Pp][Uu][Bb][Ll][Ii][Cc];

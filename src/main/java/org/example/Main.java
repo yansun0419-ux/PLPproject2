@@ -18,14 +18,18 @@ public class Main {
                 "test_io.pas",
                 "test_inheritance.pas",           // Inheritance test
                 "test_interface.pas",             // Interface test
-                "test_inheritance_interface.pas"  // Inheritance + interface test
+            "test_inheritance_interface.pas", // Inheritance + interface test
+            "test_loop_control.pas",          // Project 2: while + break + continue
+            "test_for_loop.pas",              // Project 2: for-to and for-downto
+            "test_routines_scope.pas",        // Project 2: procedures/functions + static scoping
+            "test_routine_params.pas"         // Project 2 bonus: formal parameter passing
         };
 
         int passedCount = 0;
         int failedCount = 0;
 
         System.out.println("==============================================");
-        System.out.println("Starting batch tests for the Delphi interpreter (includes bonus features)");
+        System.out.println("Starting batch tests for the Delphi interpreter (Project 1 + Project 2)");
         System.out.println("==============================================\n");
 
         for (String testFile : testFiles) {

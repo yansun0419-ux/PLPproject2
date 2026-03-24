@@ -3,15 +3,77 @@ package org.example;
 import java.util.*;
 
 public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
-    private Map<String, Object> globals = new HashMap<>();
-    private Map<String, DelphiParser.MethodImplementationContext> methodBodies = new HashMap<>();
-    private Map<String, DelphiParser.ClassTypeContext> classDefinitions = new HashMap<>();
-    private Map<String, DelphiParser.InterfaceTypeContext> interfaceDefinitions = new HashMap<>();
-    private Map<String, String> classInheritance = new HashMap<>();
-    private Map<String, List<String>> classInterfaces = new HashMap<>();
+    private final Map<String, Object> globals = new HashMap<>();
+    private final Map<String, DelphiParser.MethodImplementationContext> methodBodies = new HashMap<>();
+    private final Map<String, DelphiParser.RoutineImplementationContext> routineBodies = new HashMap<>();
+    private final Map<String, DelphiParser.ClassTypeContext> classDefinitions = new HashMap<>();
+    private final Map<String, DelphiParser.InterfaceTypeContext> interfaceDefinitions = new HashMap<>();
+    private final Map<String, String> classInheritance = new HashMap<>();
+    private final Map<String, List<String>> classInterfaces = new HashMap<>();
+
+    private final Scope globalScope = new Scope(null, globals);
+    private Scope currentScope = globalScope;
 
     private ObjectInstance currentSelf = null;
-    private Scanner scanner = new Scanner(System.in);
+    private final Scanner scanner = new Scanner(System.in);
+
+    private static class BreakSignal extends RuntimeException {}
+    private static class ContinueSignal extends RuntimeException {}
+
+    private static class Scope {
+        private final Scope parent;
+        private final Map<String, Object> values;
+
+        Scope(Scope parent) {
+            this(parent, new HashMap<>());
+        }
+
+        Scope(Scope parent, Map<String, Object> values) {
+            this.parent = parent;
+            this.values = values;
+        }
+
+        void define(String name, Object value) {
+            values.put(name.toLowerCase(), value);
+        }
+
+        boolean containsLocal(String name) {
+            return values.containsKey(name.toLowerCase());
+        }
+
+        boolean containsInChain(String name) {
+            String key = name.toLowerCase();
+            Scope s = this;
+            while (s != null) {
+                if (s.values.containsKey(key)) return true;
+                s = s.parent;
+            }
+            return false;
+        }
+
+        Object resolve(String name) {
+            String key = name.toLowerCase();
+            Scope s = this;
+            while (s != null) {
+                if (s.values.containsKey(key)) return s.values.get(key);
+                s = s.parent;
+            }
+            return null;
+        }
+
+        void assign(String name, Object value) {
+            String key = name.toLowerCase();
+            Scope s = this;
+            while (s != null) {
+                if (s.values.containsKey(key)) {
+                    s.values.put(key, value);
+                    return;
+                }
+                s = s.parent;
+            }
+            values.put(key, value);
+        }
+    }
 
     public static class ObjectInstance {
         String typeName;
@@ -32,6 +94,37 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitVarSection(DelphiParser.VarSectionContext ctx) {
+        for (DelphiParser.VariableDeclarationContext decl : ctx.variableDeclaration()) {
+            visit(decl);
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitVariableDeclaration(DelphiParser.VariableDeclarationContext ctx) {
+        Object defaultValue = defaultValueForType(ctx.type_().getText());
+        for (DelphiParser.IdentifierContext id : ctx.identifierList().identifier()) {
+            currentScope.define(id.getText(), defaultValue);
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitCompoundStatement(DelphiParser.CompoundStatementContext ctx) {
+        Scope old = currentScope;
+        currentScope = new Scope(old);
+        try {
+            if (ctx.statementList() != null) {
+                return visit(ctx.statementList());
+            }
+            return null;
+        } finally {
+            currentScope = old;
+        }
+    }
+
+    @Override
     public Object visitTypeSection(DelphiParser.TypeSectionContext ctx) {
         for (DelphiParser.TypeDefinitionContext typeDef : ctx.typeDefinition()) {
             String typeName = typeDef.identifier().getText().toLowerCase();
@@ -40,61 +133,25 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
                 DelphiParser.ClassTypeContext classCtx = typeDef.classType();
                 classDefinitions.put(typeName, classCtx);
 
-                // Distinguish inheritance from interface lists.
-                // Grammar: class(TParent) or class(IInterface1, IInterface2).
-                // With one identifier, it may be a parent class or an interface.
-                // With multiple identifiers, the first may be a parent class and the rest are interfaces.
-
                 if (classCtx.identifier() != null) {
-                    // Single inheritance: class(TParent)
                     String parentClass = classCtx.identifier().getText().toLowerCase();
                     classInheritance.put(typeName, parentClass);
-                    System.out.println("Class '" + typeName + "' extends/implements '" + parentClass + "'");
                 }
 
                 if (classCtx.interfaceList() != null) {
-                    // Interface list: class(IInterface1, IInterface2) or class(TParent, IInterface1)
                     List<DelphiParser.IdentifierContext> identifiers = classCtx.interfaceList().identifier();
-
                     if (!identifiers.isEmpty()) {
                         List<String> interfaces = new ArrayList<>();
-
-                        // The first identifier can be a parent class.
-                        // If classCtx.identifier() is set, all identifiers here are interfaces.
-                        // Otherwise, the first may be a parent class.
-
-                        int startIndex = 0;
-
-                        // If there is no explicit parent and there are multiple identifiers,
-                        // check whether the first is a class (not an interface).
-                        if (classCtx.identifier() == null && identifiers.size() > 1) {
-                            // The first may be a parent class; check if it is defined as a class.
-                            String firstId = identifiers.get(0).getText().toLowerCase();
-                            if (classDefinitions.containsKey(firstId) || !interfaceDefinitions.containsKey(firstId)) {
-                                // The first is a parent class.
-                                classInheritance.put(typeName, firstId);
-                                System.out.println("Class '" + typeName + "' extends/implements '" + firstId + "'");
-                                startIndex = 1; // Start from the second item; the rest are interfaces.
-                            }
+                        for (DelphiParser.IdentifierContext id : identifiers) {
+                            interfaces.add(id.getText().toLowerCase());
                         }
-
-                        // Collect interfaces.
-                        for (int i = startIndex; i < identifiers.size(); i++) {
-                            String interfaceName = identifiers.get(i).getText().toLowerCase();
-                            interfaces.add(interfaceName);
-                        }
-
-                        if (!interfaces.isEmpty()) {
-                            classInterfaces.put(typeName, interfaces);
-                            System.out.println("Class '" + typeName + "' implements interfaces: " + interfaces);
-                        }
+                        classInterfaces.put(typeName, interfaces);
                     }
                 }
             }
 
             if (typeDef.interfaceType() != null) {
                 interfaceDefinitions.put(typeName, typeDef.interfaceType());
-                System.out.println("Defined interface '" + typeName + "'");
             }
         }
         return null;
@@ -105,6 +162,9 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
         for (DelphiParser.MethodImplementationContext method : ctx.methodImplementation()) {
             visit(method);
         }
+        for (DelphiParser.RoutineImplementationContext routine : ctx.routineImplementation()) {
+            visit(routine);
+        }
         return null;
     }
 
@@ -112,6 +172,13 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
     public Object visitMethodImplementation(DelphiParser.MethodImplementationContext ctx) {
         String fullName = ctx.qualifiedIdentifier().getText().toLowerCase();
         methodBodies.put(fullName, ctx);
+        return null;
+    }
+
+    @Override
+    public Object visitRoutineImplementation(DelphiParser.RoutineImplementationContext ctx) {
+        String name = ctx.identifier().getText().toLowerCase();
+        routineBodies.put(name, ctx);
         return null;
     }
 
@@ -131,26 +198,12 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
             chain.add(current);
             current = classInheritance.get(current);
 
-            if (chain.contains(current)) {
-                System.err.println("Warning: circular inheritance detected: " + chain);
-                break;
+            if (current != null && chain.contains(current)) {
+                throw new RuntimeException("Error: circular inheritance detected: " + chain);
             }
         }
 
         return chain;
-    }
-
-    private boolean implementsInterface(String className, String interfaceName) {
-        List<String> chain = getInheritanceChain(className);
-
-        for (String cls : chain) {
-            List<String> interfaces = classInterfaces.get(cls);
-            if (interfaces != null && interfaces.contains(interfaceName.toLowerCase())) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void validateInterfaceImplementation(String className) {
@@ -159,12 +212,9 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
 
         for (String interfaceName : interfaces) {
             DelphiParser.InterfaceTypeContext interfaceDef = interfaceDefinitions.get(interfaceName);
-            if (interfaceDef == null) {
-                System.err.println("Warning: interface '" + interfaceName + "' is not defined");
+            if (interfaceDef == null || interfaceDef.interfaceMemberList() == null) {
                 continue;
             }
-
-            if (interfaceDef.interfaceMemberList() == null) continue;
 
             for (DelphiParser.InterfaceMethodDeclarationContext method :
                     interfaceDef.interfaceMemberList().interfaceMethodDeclaration()) {
@@ -196,21 +246,62 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
         }
     }
 
+    private Object defaultValueForType(String typeName) {
+        String t = typeName.toLowerCase();
+        if (t.equals("string")) return "";
+        return 0;
+    }
+
     private Object getValue(String name) {
-        name = name.toLowerCase();
-        if (name.contains(".")) {
-            String[] parts = name.split("\\.");
-            Object obj = globals.get(parts[0]);
+        String key = name.toLowerCase();
+
+        if (key.contains(".")) {
+            String[] parts = key.split("\\.");
+            Object obj = currentScope.resolve(parts[0]);
+            if (!(obj instanceof ObjectInstance)) {
+                return 0;
+            }
+            ObjectInstance instance = (ObjectInstance) obj;
+            checkFieldAccess(instance, parts[1]);
+            return instance.fields.getOrDefault(parts[1], 0);
+        }
+
+        if (currentSelf != null && currentSelf.fields.containsKey(key)) {
+            return currentSelf.fields.get(key);
+        }
+
+        if (currentScope.containsInChain(key)) {
+            return currentScope.resolve(key);
+        }
+        return 0;
+    }
+
+    private void assignValue(String name, Object value) {
+        String key = name.toLowerCase();
+
+        if (key.contains(".")) {
+            String[] parts = key.split("\\.");
+            Object obj = currentScope.resolve(parts[0]);
             if (obj instanceof ObjectInstance) {
                 ObjectInstance instance = (ObjectInstance) obj;
                 checkFieldAccess(instance, parts[1]);
-                return instance.fields.getOrDefault(parts[1], 0);
+                instance.fields.put(parts[1], value);
+                return;
             }
+            throw new RuntimeException("Error: cannot assign through non-object reference '" + parts[0] + "'");
         }
-        if (currentSelf != null && currentSelf.fields.containsKey(name)) {
-            return currentSelf.fields.get(name);
+
+        if (currentScope.containsInChain(key)) {
+            currentScope.assign(key, value);
+            return;
         }
-        return globals.getOrDefault(name, 0);
+
+        if (currentSelf != null && currentSelf.fields.containsKey(key)) {
+            currentSelf.fields.put(key, value);
+            return;
+        }
+
+        currentScope.define(key, value);
     }
 
     private void checkFieldAccess(ObjectInstance instance, String fieldName) {
@@ -225,19 +316,14 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
                     throw new RuntimeException("Error: cannot access private field '" + fieldName + "'");
                 }
                 break;
-
             case "protected":
-                if (currentSelf != null) {
-                    if (currentSelf == instance || isSameClassOrSubclass(currentSelf, instance)) {
-                        break;
-                    }
+                if (currentSelf != null && (currentSelf == instance || isSameClassOrSubclass(currentSelf, instance))) {
+                    break;
                 }
                 break;
-
             case "published":
             case "public":
                 break;
-
             default:
                 break;
         }
@@ -256,61 +342,66 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
     public Object visitAssignment(DelphiParser.AssignmentContext ctx) {
         String name = ctx.qualifiedIdentifier().getText().toLowerCase();
         Object value = visit(ctx.expression());
-
-        if (name.contains(".")) {
-            String[] parts = name.split("\\.");
-            Object obj = globals.get(parts[0]);
-            if (obj instanceof ObjectInstance) {
-                ObjectInstance instance = (ObjectInstance) obj;
-                checkFieldAccess(instance, parts[1]);
-                instance.fields.put(parts[1], value);
-            }
-        } else if (currentSelf != null) {
-            currentSelf.fields.put(name, value);
-        } else {
-            globals.put(name, value);
-        }
+        assignValue(name, value);
         return value;
     }
 
     @Override
     public Object visitExpression(DelphiParser.ExpressionContext ctx) {
-        return visit(ctx.relExpression(0));
+        Object result = visit(ctx.relExpression(0));
+        for (int i = 1; i < ctx.relExpression().size(); i++) {
+            Object rhs = visit(ctx.relExpression(i));
+            String op = ctx.getChild(2 * i - 1).getText().toLowerCase();
+            boolean leftBool = toBoolean(result);
+            boolean rightBool = toBoolean(rhs);
+            if (op.equals("and")) {
+                result = leftBool && rightBool ? 1 : 0;
+            } else if (op.equals("or")) {
+                result = leftBool || rightBool ? 1 : 0;
+            }
+        }
+        return result;
     }
 
     @Override
     public Object visitRelExpression(DelphiParser.RelExpressionContext ctx) {
         Object val = visit(ctx.additiveExpression(0));
-        if (ctx.additiveExpression().size() > 1) {
-            int v1 = (int) val;
-            int v2 = (int) visit(ctx.additiveExpression(1));
-            if (ctx.GT() != null) return v1 > v2 ? 1 : 0;
-            if (ctx.LT() != null) return v1 < v2 ? 1 : 0;
-            if (ctx.EQUAL() != null) return v1 == v2 ? 1 : 0;
+        if (ctx.additiveExpression().size() == 1) {
+            return val;
         }
+
+        int v1 = toInt(val);
+        int v2 = toInt(visit(ctx.additiveExpression(1)));
+
+        if (ctx.GT() != null) return v1 > v2 ? 1 : 0;
+        if (ctx.LT() != null) return v1 < v2 ? 1 : 0;
+        if (ctx.EQUAL() != null) return v1 == v2 ? 1 : 0;
+        if (ctx.LE() != null) return v1 <= v2 ? 1 : 0;
+        if (ctx.GE() != null) return v1 >= v2 ? 1 : 0;
+        if (ctx.NOT_EQUAL() != null) return v1 != v2 ? 1 : 0;
         return val;
     }
 
     @Override
     public Object visitAdditiveExpression(DelphiParser.AdditiveExpressionContext ctx) {
-        Object result = visit(ctx.term(0));
+        int result = toInt(visit(ctx.term(0)));
         for (int i = 1; i < ctx.term().size(); i++) {
-            int nextVal = (int) visit(ctx.term(i));
+            int nextVal = toInt(visit(ctx.term(i)));
             String op = ctx.getChild(2 * i - 1).getText();
-            if (op.equals("+")) result = (int) result + nextVal;
-            else result = (int) result - nextVal;
+            if (op.equals("+")) result += nextVal;
+            else result -= nextVal;
         }
         return result;
     }
 
     @Override
     public Object visitTerm(DelphiParser.TermContext ctx) {
-        Object result = visit(ctx.factor(0));
+        int result = toInt(visit(ctx.factor(0)));
         for (int i = 1; i < ctx.factor().size(); i++) {
-            int nextVal = (int) visit(ctx.factor(i));
+            int nextVal = toInt(visit(ctx.factor(i)));
             String op = ctx.getChild(2 * i - 1).getText();
-            if (op.equals("*")) result = (int) result * nextVal;
-            else result = (int) result / nextVal;
+            if (op.equals("*")) result *= nextVal;
+            else result /= nextVal;
         }
         return result;
     }
@@ -318,6 +409,7 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
     @Override
     public Object visitFactor(DelphiParser.FactorContext ctx) {
         if (ctx.INT_LITERAL() != null) return Integer.parseInt(ctx.INT_LITERAL().getText());
+        if (ctx.STRING_LITERAL() != null) return parseStringLiteral(ctx.STRING_LITERAL().getText());
         if (ctx.methodCall() != null) return visit(ctx.methodCall());
         if (ctx.qualifiedIdentifier() != null) return getValue(ctx.qualifiedIdentifier().getText());
         if (ctx.LPAREN() != null) return visit(ctx.expression());
@@ -326,20 +418,88 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
 
     @Override
     public Object visitIfStatement(DelphiParser.IfStatementContext ctx) {
-        Object condition = visit(ctx.expression());
-        int condValue = (condition instanceof Integer) ? (int) condition : 0;
-
-        if (condValue != 0) {
+        if (toBoolean(visit(ctx.expression()))) {
             return visit(ctx.nonEmptyStatement(0));
-        } else if (ctx.ELSE() != null) {
+        }
+        if (ctx.ELSE() != null) {
             return visit(ctx.nonEmptyStatement(1));
         }
         return null;
     }
 
     @Override
+    public Object visitWhileStatement(DelphiParser.WhileStatementContext ctx) {
+        while (toBoolean(visit(ctx.expression()))) {
+            Scope old = currentScope;
+            currentScope = new Scope(old);
+            try {
+                visit(ctx.nonEmptyStatement());
+            } catch (ContinueSignal c) {
+                // Continue is handled by the loop.
+            } catch (BreakSignal b) {
+                break;
+            } finally {
+                currentScope = old;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitForStatement(DelphiParser.ForStatementContext ctx) {
+        String loopVar = ctx.identifier().getText().toLowerCase();
+        int start = toInt(visit(ctx.expression(0)));
+        int end = toInt(visit(ctx.expression(1)));
+        boolean isDownTo = ctx.DOWNTO() != null;
+
+        if (isDownTo) {
+            for (int i = start; i >= end; i--) {
+                assignValue(loopVar, i);
+                Scope old = currentScope;
+                currentScope = new Scope(old);
+                try {
+                    visit(ctx.nonEmptyStatement());
+                } catch (ContinueSignal c) {
+                    // Continue is handled by the loop.
+                } catch (BreakSignal b) {
+                    break;
+                } finally {
+                    currentScope = old;
+                }
+            }
+        } else {
+            for (int i = start; i <= end; i++) {
+                assignValue(loopVar, i);
+                Scope old = currentScope;
+                currentScope = new Scope(old);
+                try {
+                    visit(ctx.nonEmptyStatement());
+                } catch (ContinueSignal c) {
+                    // Continue is handled by the loop.
+                } catch (BreakSignal b) {
+                    break;
+                } finally {
+                    currentScope = old;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitBreakStatement(DelphiParser.BreakStatementContext ctx) {
+        throw new BreakSignal();
+    }
+
+    @Override
+    public Object visitContinueStatement(DelphiParser.ContinueStatementContext ctx) {
+        throw new ContinueSignal();
+    }
+
+    @Override
     public Object visitMethodCall(DelphiParser.MethodCallContext ctx) {
         String name = ctx.qualifiedIdentifier().getText().toLowerCase();
+        boolean hasParentheses = ctx.LPAREN() != null;
 
         if (name.equals("readint")) {
             System.out.print("Enter an integer: ");
@@ -353,16 +513,22 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
         }
 
         if (name.equals("writeln")) {
-            Object val = (ctx.expressionList() != null) ? visit(ctx.expressionList().expression(0)) : "";
-            System.out.println(val);
+            if (ctx.expressionList() == null || ctx.expressionList().expression().isEmpty()) {
+                System.out.println();
+                return null;
+            }
+            List<String> parts = new ArrayList<>();
+            for (DelphiParser.ExpressionContext expr : ctx.expressionList().expression()) {
+                Object val = visit(expr);
+                parts.add(String.valueOf(val));
+            }
+            System.out.println(String.join(" ", parts));
             return null;
         }
 
-        boolean hasParentheses = (ctx.LPAREN() != null);
-
         if (!hasParentheses && name.contains(".")) {
             String[] parts = name.split("\\.");
-            Object obj = globals.get(parts[0]);
+            Object obj = currentScope.resolve(parts[0]);
             if (obj instanceof ObjectInstance) {
                 ObjectInstance instance = (ObjectInstance) obj;
                 if (instance.fields.containsKey(parts[1])) {
@@ -379,43 +545,128 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
             if (methodType.equals("constructor")) {
                 String typeName = name.split("\\.")[0];
                 ObjectInstance newInstance = new ObjectInstance(typeName);
-
                 initializeFieldsWithInheritance(newInstance);
                 validateInterfaceImplementation(typeName);
-
                 return executeMethod(newInstance, name, ctx.expressionList());
             }
         }
 
         if (name.contains(".")) {
             String[] parts = name.split("\\.");
-            Object obj = globals.get(parts[0]);
+            Object obj = currentScope.resolve(parts[0]);
             if (obj instanceof ObjectInstance) {
                 ObjectInstance instance = (ObjectInstance) obj;
                 String methodKey = findMethodInHierarchy(instance.typeName, parts[1]);
-
                 if (methodKey != null) {
                     return executeMethod(instance, methodKey, ctx.expressionList(), parts[0]);
-                } else {
-                    System.err.println("Warning: method not found '" + parts[1] + "'");
-                    return null;
                 }
+                throw new RuntimeException("Error: method not found '" + parts[1] + "'");
             }
+        }
+
+        if (routineBodies.containsKey(name)) {
+            return executeRoutine(name, ctx.expressionList());
         }
 
         return getValue(name);
     }
 
+    private int toInt(Object value) {
+        if (value instanceof Integer) return (Integer) value;
+        if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (Exception e) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private boolean toBoolean(Object value) {
+        return toInt(value) != 0;
+    }
+
+    private String parseStringLiteral(String raw) {
+        if (raw == null || raw.length() < 2) return "";
+        return raw.substring(1, raw.length() - 1).replace("''", "'");
+    }
+
+    private List<Object> evaluateArguments(DelphiParser.ExpressionListContext argsCtx) {
+        List<Object> values = new ArrayList<>();
+        if (argsCtx == null) return values;
+        for (DelphiParser.ExpressionContext expr : argsCtx.expression()) {
+            values.add(visit(expr));
+        }
+        return values;
+    }
+
+    private void bindFormalParameters(DelphiParser.FormalParametersContext formalParameters,
+                                      List<Object> args,
+                                      Scope targetScope) {
+        if (formalParameters == null) return;
+
+        int argIndex = 0;
+        for (DelphiParser.ParameterGroupContext group : formalParameters.parameterGroup()) {
+            for (DelphiParser.IdentifierContext id : group.identifierList().identifier()) {
+                Object value = (argIndex < args.size()) ? args.get(argIndex) : 0;
+                targetScope.define(id.getText(), value);
+                argIndex++;
+            }
+        }
+    }
+
+    private Object executeRoutine(String routineName, DelphiParser.ExpressionListContext argsCtx) {
+        DelphiParser.RoutineImplementationContext routineCtx = routineBodies.get(routineName.toLowerCase());
+        if (routineCtx == null) {
+            throw new RuntimeException("Error: routine not found '" + routineName + "'");
+        }
+
+        List<Object> argValues = evaluateArguments(argsCtx);
+        Scope oldScope = currentScope;
+        ObjectInstance oldSelf = currentSelf;
+
+        currentSelf = null;
+        currentScope = new Scope(globalScope);
+
+        try {
+            if (routineCtx.varSection() != null) {
+                visit(routineCtx.varSection());
+            }
+
+            bindFormalParameters(routineCtx.formalParameters(), argValues, currentScope);
+
+            boolean isFunction = routineCtx.FUNCTION() != null;
+            String functionName = routineCtx.identifier().getText().toLowerCase();
+            if (isFunction && !currentScope.containsLocal(functionName)) {
+                currentScope.define(functionName, 0);
+            }
+
+            try {
+                visit(routineCtx.compoundStatement());
+            } catch (BreakSignal | ContinueSignal signal) {
+                throw new RuntimeException("Error: break/continue used outside loop in routine '" + routineName + "'");
+            }
+
+            if (isFunction) {
+                return currentScope.resolve(functionName);
+            }
+            return null;
+        } finally {
+            currentScope = oldScope;
+            currentSelf = oldSelf;
+        }
+    }
+
     private String findMethodInHierarchy(String className, String methodName) {
         List<String> chain = getInheritanceChain(className);
-
         for (String cls : chain) {
             String methodKey = cls + "." + methodName.toLowerCase();
             if (methodBodies.containsKey(methodKey)) {
                 return methodKey;
             }
         }
-
         return null;
     }
 
@@ -428,7 +679,6 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
             if (classDef == null || classDef.memberList() == null) continue;
 
             String currentVisibility = "public";
-
             for (int i = 0; i < classDef.memberList().getChildCount(); i++) {
                 var child = classDef.memberList().getChild(i);
 
@@ -456,68 +706,64 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
         return executeMethod(instance, methodKey, args, null);
     }
 
-    private Object executeMethod(ObjectInstance instance, String methodKey,
-                                 DelphiParser.ExpressionListContext args, String objectVarName) {
+    private Object executeMethod(ObjectInstance instance,
+                                 String methodKey,
+                                 DelphiParser.ExpressionListContext args,
+                                 String objectVarName) {
         DelphiParser.MethodImplementationContext methodCtx = methodBodies.get(methodKey.toLowerCase());
         if (methodCtx == null) {
-            System.err.println("Warning: method implementation not found '" + methodKey + "'");
-            return null;
+            throw new RuntimeException("Error: method implementation not found '" + methodKey + "'");
         }
 
-        ObjectInstance oldSelf = this.currentSelf;
-        this.currentSelf = instance;
+        List<Object> argValues = evaluateArguments(args);
 
-        if (args != null && methodCtx.formalParameters() != null) {
-            List<DelphiParser.ParameterGroupContext> paramGroups = methodCtx.formalParameters().parameterGroup();
-            if (!paramGroups.isEmpty()) {
-                List<DelphiParser.IdentifierContext> paramIds = paramGroups.get(0).identifierList().identifier();
-                if (!paramIds.isEmpty()) {
-                    String paramName = paramIds.get(0).getText().toLowerCase();
-                    Object argValue = visit(args.expression(0));
-                    instance.fields.put(paramName, argValue);
-                }
+        ObjectInstance oldSelf = currentSelf;
+        Scope oldScope = currentScope;
+
+        currentSelf = instance;
+        currentScope = new Scope(globalScope);
+
+        try {
+            if (methodCtx.varSection() != null) {
+                visit(methodCtx.varSection());
             }
+
+            bindFormalParameters(methodCtx.formalParameters(), argValues, currentScope);
+
+            String methodType = getMethodType(methodCtx);
+            String methodName = methodCtx.qualifiedIdentifier().identifier(1).getText().toLowerCase();
+            if (methodType.equals("function") && !currentScope.containsLocal(methodName)) {
+                currentScope.define(methodName, 0);
+            }
+
+            try {
+                visit(methodCtx.compoundStatement());
+            } catch (BreakSignal | ContinueSignal signal) {
+                throw new RuntimeException("Error: break/continue used outside loop in method '" + methodKey + "'");
+            }
+
+            switch (methodType) {
+                case "constructor":
+                    return instance;
+                case "destructor":
+                    if (objectVarName != null && globalScope.containsInChain(objectVarName)) {
+                        globalScope.assign(objectVarName, null);
+                    }
+                    instance.fields.clear();
+                    instance.fieldVisibility.clear();
+                    return null;
+                case "function":
+                    if (currentScope.containsInChain(methodName)) {
+                        return currentScope.resolve(methodName);
+                    }
+                    return 0;
+                case "procedure":
+                default:
+                    return null;
+            }
+        } finally {
+            currentSelf = oldSelf;
+            currentScope = oldScope;
         }
-
-        visit(methodCtx.compoundStatement());
-
-        Object result = null;
-        String methodType = getMethodType(methodCtx);
-
-        switch (methodType) {
-            case "constructor":
-                result = instance;
-                break;
-
-            case "destructor":
-                if (objectVarName != null) {
-                    globals.remove(objectVarName.toLowerCase());
-                    System.out.println("Object '" + objectVarName + "' destroyed");
-                } else {
-                    System.out.println("Destructor '" + methodKey + "' executed");
-                }
-                instance.fields.clear();
-                instance.fieldVisibility.clear();
-                result = null;
-                break;
-
-            case "function":
-                String funcName = methodCtx.qualifiedIdentifier().getText()
-                        .split("\\.")[1].toLowerCase();
-                result = instance.fields.get(funcName);
-
-                if (result == null) {
-                    System.err.println("Warning: function '" + funcName + "' has no return value set");
-                    result = 0;
-                }
-                break;
-
-            case "procedure":
-                result = null;
-                break;
-        }
-
-        this.currentSelf = oldSelf;
-        return result;
     }
 }

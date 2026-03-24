@@ -178,6 +178,16 @@ public interface DelphiListener extends ParseTreeListener {
 	 */
 	void exitMethodImplementation(DelphiParser.MethodImplementationContext ctx);
 	/**
+	 * Enter a parse tree produced by {@link DelphiParser#routineImplementation}.
+	 * @param ctx the parse tree
+	 */
+	void enterRoutineImplementation(DelphiParser.RoutineImplementationContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link DelphiParser#routineImplementation}.
+	 * @param ctx the parse tree
+	 */
+	void exitRoutineImplementation(DelphiParser.RoutineImplementationContext ctx);
+	/**
 	 * Enter a parse tree produced by {@link DelphiParser#compoundStatement}.
 	 * @param ctx the parse tree
 	 */
@@ -217,6 +227,46 @@ public interface DelphiListener extends ParseTreeListener {
 	 * @param ctx the parse tree
 	 */
 	void exitIfStatement(DelphiParser.IfStatementContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link DelphiParser#whileStatement}.
+	 * @param ctx the parse tree
+	 */
+	void enterWhileStatement(DelphiParser.WhileStatementContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link DelphiParser#whileStatement}.
+	 * @param ctx the parse tree
+	 */
+	void exitWhileStatement(DelphiParser.WhileStatementContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link DelphiParser#forStatement}.
+	 * @param ctx the parse tree
+	 */
+	void enterForStatement(DelphiParser.ForStatementContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link DelphiParser#forStatement}.
+	 * @param ctx the parse tree
+	 */
+	void exitForStatement(DelphiParser.ForStatementContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link DelphiParser#breakStatement}.
+	 * @param ctx the parse tree
+	 */
+	void enterBreakStatement(DelphiParser.BreakStatementContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link DelphiParser#breakStatement}.
+	 * @param ctx the parse tree
+	 */
+	void exitBreakStatement(DelphiParser.BreakStatementContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link DelphiParser#continueStatement}.
+	 * @param ctx the parse tree
+	 */
+	void enterContinueStatement(DelphiParser.ContinueStatementContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link DelphiParser#continueStatement}.
+	 * @param ctx the parse tree
+	 */
+	void exitContinueStatement(DelphiParser.ContinueStatementContext ctx);
 	/**
 	 * Enter a parse tree produced by {@link DelphiParser#assignment}.
 	 * @param ctx the parse tree

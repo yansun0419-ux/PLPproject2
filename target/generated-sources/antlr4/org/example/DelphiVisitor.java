@@ -113,6 +113,12 @@ public interface DelphiVisitor<T> extends ParseTreeVisitor<T> {
 	 */
 	T visitMethodImplementation(DelphiParser.MethodImplementationContext ctx);
 	/**
+	 * Visit a parse tree produced by {@link DelphiParser#routineImplementation}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitRoutineImplementation(DelphiParser.RoutineImplementationContext ctx);
+	/**
 	 * Visit a parse tree produced by {@link DelphiParser#compoundStatement}.
 	 * @param ctx the parse tree
 	 * @return the visitor result
@@ -136,6 +142,30 @@ public interface DelphiVisitor<T> extends ParseTreeVisitor<T> {
 	 * @return the visitor result
 	 */
 	T visitIfStatement(DelphiParser.IfStatementContext ctx);
+	/**
+	 * Visit a parse tree produced by {@link DelphiParser#whileStatement}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitWhileStatement(DelphiParser.WhileStatementContext ctx);
+	/**
+	 * Visit a parse tree produced by {@link DelphiParser#forStatement}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitForStatement(DelphiParser.ForStatementContext ctx);
+	/**
+	 * Visit a parse tree produced by {@link DelphiParser#breakStatement}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitBreakStatement(DelphiParser.BreakStatementContext ctx);
+	/**
+	 * Visit a parse tree produced by {@link DelphiParser#continueStatement}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitContinueStatement(DelphiParser.ContinueStatementContext ctx);
 	/**
 	 * Visit a parse tree produced by {@link DelphiParser#assignment}.
 	 * @param ctx the parse tree

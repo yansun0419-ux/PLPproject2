@@ -60,7 +60,7 @@ variableDeclaration : identifierList COLON type_ SEMI ;
 identifierList : identifier (COMMA identifier)* ;
 
 // --- 4. Method implementations ---
-implementationSection : (methodImplementation | routineImplementation)+ ;
+implementationSection : (routineImplementation | methodImplementation)+ ;
 methodImplementation
     : CONSTRUCTOR qualifiedIdentifier (formalParameters)? SEMI
       (varSection)?

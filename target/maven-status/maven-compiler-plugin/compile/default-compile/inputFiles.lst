@@ -1,8 +1,8 @@
-D:\javapacage\PLP_Project1\target\generated-sources\antlr4\org\example\DelphiBaseListener.java
-D:\javapacage\PLP_Project1\target\generated-sources\antlr4\org\example\DelphiVisitor.java
-D:\javapacage\PLP_Project1\target\generated-sources\antlr4\org\example\DelphiBaseVisitor.java
-D:\javapacage\PLP_Project1\target\generated-sources\antlr4\org\example\DelphiLexer.java
-D:\javapacage\PLP_Project1\target\generated-sources\antlr4\org\example\DelphiParser.java
-D:\javapacage\PLP_Project1\target\generated-sources\antlr4\org\example\DelphiListener.java
-D:\javapacage\PLP_Project1\src\main\java\org\example\Main.java
-D:\javapacage\PLP_Project1\src\main\java\org\example\DelphiInterpreter.java
+D:\Code\PLPproject2\src\main\java\org\example\DelphiInterpreter.java
+D:\Code\PLPproject2\src\main\java\org\example\Main.java
+D:\Code\PLPproject2\target\generated-sources\antlr4\org\example\DelphiBaseListener.java
+D:\Code\PLPproject2\target\generated-sources\antlr4\org\example\DelphiBaseVisitor.java
+D:\Code\PLPproject2\target\generated-sources\antlr4\org\example\DelphiLexer.java
+D:\Code\PLPproject2\target\generated-sources\antlr4\org\example\DelphiListener.java
+D:\Code\PLPproject2\target\generated-sources\antlr4\org\example\DelphiParser.java
+D:\Code\PLPproject2\target\generated-sources\antlr4\org\example\DelphiVisitor.java

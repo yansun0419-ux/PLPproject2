@@ -18,6 +18,10 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
     private final Scanner scanner = new Scanner(System.in);
     private final boolean printOptimizedAst = true;
 
+    // --- Added for semantic validation of break/continue ---
+    // Tracks whether we are currently inside a loop (while/for).
+    private int loopDepth = 0;
+
     private static class BreakSignal extends RuntimeException {}
     private static class ContinueSignal extends RuntimeException {}
 
@@ -455,70 +459,86 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
 
     @Override
     public Object visitWhileStatement(DelphiParser.WhileStatementContext ctx) {
-        while (toBoolean(visit(ctx.expression()))) {
-            Scope old = currentScope;
-            currentScope = new Scope(old);
-            try {
-                visit(ctx.nonEmptyStatement());
-            } catch (ContinueSignal c) {
-                // Continue is handled by the loop.
-            } catch (BreakSignal b) {
-                break;
-            } finally {
-                currentScope = old;
+        loopDepth++;
+        try {
+            while (toBoolean(visit(ctx.expression()))) {
+                Scope old = currentScope;
+                currentScope = new Scope(old);
+                try {
+                    visit(ctx.nonEmptyStatement());
+                } catch (ContinueSignal c) {
+                    // Continue is handled by the loop.
+                } catch (BreakSignal b) {
+                    break;
+                } finally {
+                    currentScope = old;
+                }
             }
+            return null;
+        } finally {
+            loopDepth--;
         }
-        return null;
     }
 
     @Override
     public Object visitForStatement(DelphiParser.ForStatementContext ctx) {
-        String loopVar = ctx.identifier().getText().toLowerCase();
-        int start = toInt(visit(ctx.expression(0)));
-        int end = toInt(visit(ctx.expression(1)));
-        boolean isDownTo = ctx.DOWNTO() != null;
+        loopDepth++;
+        try {
+            String loopVar = ctx.identifier().getText().toLowerCase();
+            int start = toInt(visit(ctx.expression(0)));
+            int end = toInt(visit(ctx.expression(1)));
+            boolean isDownTo = ctx.DOWNTO() != null;
 
-        if (isDownTo) {
-            for (int i = start; i >= end; i--) {
-                assignValue(loopVar, i);
-                Scope old = currentScope;
-                currentScope = new Scope(old);
-                try {
-                    visit(ctx.nonEmptyStatement());
-                } catch (ContinueSignal c) {
-                    // Continue is handled by the loop.
-                } catch (BreakSignal b) {
-                    break;
-                } finally {
-                    currentScope = old;
+            if (isDownTo) {
+                for (int i = start; i >= end; i--) {
+                    assignValue(loopVar, i);
+                    Scope old = currentScope;
+                    currentScope = new Scope(old);
+                    try {
+                        visit(ctx.nonEmptyStatement());
+                    } catch (ContinueSignal c) {
+                        // Continue is handled by the loop.
+                    } catch (BreakSignal b) {
+                        break;
+                    } finally {
+                        currentScope = old;
+                    }
+                }
+            } else {
+                for (int i = start; i <= end; i++) {
+                    assignValue(loopVar, i);
+                    Scope old = currentScope;
+                    currentScope = new Scope(old);
+                    try {
+                        visit(ctx.nonEmptyStatement());
+                    } catch (ContinueSignal c) {
+                        // Continue is handled by the loop.
+                    } catch (BreakSignal b) {
+                        break;
+                    } finally {
+                        currentScope = old;
+                    }
                 }
             }
-        } else {
-            for (int i = start; i <= end; i++) {
-                assignValue(loopVar, i);
-                Scope old = currentScope;
-                currentScope = new Scope(old);
-                try {
-                    visit(ctx.nonEmptyStatement());
-                } catch (ContinueSignal c) {
-                    // Continue is handled by the loop.
-                } catch (BreakSignal b) {
-                    break;
-                } finally {
-                    currentScope = old;
-                }
-            }
+            return null;
+        } finally {
+            loopDepth--;
         }
-        return null;
     }
 
     @Override
     public Object visitBreakStatement(DelphiParser.BreakStatementContext ctx) {
+        if (loopDepth <= 0) {
+            throw new RuntimeException("Error: break used outside of a loop");
+        }
         throw new BreakSignal();
     }
 
     @Override
     public Object visitContinueStatement(DelphiParser.ContinueStatementContext ctx) {
+        if (loopDepth <= 0) {
+            throw new RuntimeException("Error: continue used outside of a loop");
+        }
         throw new ContinueSignal();
     }
 
@@ -713,7 +733,7 @@ public class DelphiInterpreter extends DelphiBaseVisitor<Object> {
                 int l = toInt(result.value);
                 int r = toInt(rhs.value);
 
-                if (op.equals("*") ) {
+                if (op.equals("*")) {
                     result = new FoldResult(true, l * r, String.valueOf(l * r));
                 } else {
                     if (r == 0) {

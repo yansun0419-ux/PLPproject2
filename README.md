@@ -1,9 +1,9 @@
-# Delphi Interpreter (Project 2)
+# Delphi Interpreter / Compiler Prep (Project 3 LLVM Final)
 
 ## Overview
 This project implements a Delphi/Turbo Pascal interpreter using ANTLR4 visitors.
 
-The codebase keeps all Project 1 object-oriented features and adds the required Project 2 language features:
+The codebase keeps all Project 1 object-oriented features and adds the required language features as the base for Project 3 (LLVM Final):
 - while-do and for-do loops
 - break and continue
 - user-defined procedures and functions
@@ -19,7 +19,7 @@ The codebase keeps all Project 1 object-oriented features and adds the required 
 - Interface declarations and implementation checks
 - Built-in ReadInt and WriteLn
 
-### Project 2 Core Features
+### Core Features (Foundation for Project 3)
 - while-do loops
 - for-do loops (both TO and DOWNTO)
 - break and continue control flow
@@ -58,7 +58,7 @@ Project 1 tests:
 - test_inheritance_interface.pas
 - test_full_program.pas
 
-Project 2 tests:
+Baseline tests used for Project 3 transition:
 - test_loop_control.pas
 - test_for_loop.pas
 - test_routines_scope.pas

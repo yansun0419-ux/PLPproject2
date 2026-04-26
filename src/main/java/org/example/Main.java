@@ -2,96 +2,152 @@ package org.example;
 
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.*;
+import java.io.IOException;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
-import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
-    public static void main(String[] args) {
-        String[] testFiles = {
-                "test_full_program.pas",
-                "test_1.pas",
-                "test_class_object.pas",
-                "test_constructor_destructor.pas",
-                "test_encapsulation.pas",
-                "test_access_control.pas",
-                "test_io.pas",
-                "test_inheritance.pas",           // Inheritance test
-                "test_interface.pas",             // Interface test
-            "test_inheritance_interface.pas", // Inheritance + interface test
-            "test_loop_control.pas",          // Baseline: while + break + continue
-            "test_for_loop.pas",              // Baseline: for-to and for-downto
-            "test_routines_scope.pas",        // Baseline: procedures/functions + static scoping
-            "test_routine_params.pas",        // Baseline bonus: formal parameter passing
-            "test_constant_propagation.pas"   // Baseline bonus: constant folding output
-        };
+    public static void main(String[] args) throws Exception {
+        if (args.length == 0) {
+            printUsage();
+            return;
+        }
 
-        int passedCount = 0;
-        int failedCount = 0;
+        String command = args[0].toLowerCase();
+        switch (command) {
+            case "compile":
+                runCompile(args);
+                return;
+            case "batch":
+                runBatchCompile(args);
+                return;
+            case "interpret":
+                runInterpret(args);
+                return;
+            default:
+                printUsage();
+        }
+    }
 
-        System.out.println("==============================================");
-        System.out.println("Starting batch tests for Project 3 LLVM transition baseline features");
-        System.out.println("==============================================\n");
+    private static void runCompile(String[] args) throws Exception {
+        if (args.length < 2) {
+            throw new IllegalArgumentException("compile mode requires an input .pas file");
+        }
 
-        for (String testFile : testFiles) {
-            System.out.println("\n----------------------------------------------");
-            System.out.println("Test file: " + testFile);
-            System.out.println("----------------------------------------------");
+        Path inputPath = Paths.get(args[1]).toAbsolutePath().normalize();
+        if (!Files.exists(inputPath)) {
+            throw new IllegalArgumentException("Input file not found: " + inputPath);
+        }
 
-            File file = new File(testFile);
-            if (!file.exists()) {
-                System.err.println("Warning: test file not found " + file.getAbsolutePath());
-                System.out.println("Status: SKIPPED\n");
-                failedCount++;
-                continue;
-            }
+        Path outputPath;
+        if (args.length >= 3) {
+            outputPath = Paths.get(args[2]).toAbsolutePath().normalize();
+        } else {
+            String fileName = inputPath.getFileName().toString();
+            int idx = fileName.lastIndexOf('.');
+            String stem = (idx > 0) ? fileName.substring(0, idx) : fileName;
+            outputPath = inputPath.getParent().resolve(stem + ".ll").toAbsolutePath().normalize();
+        }
 
-            try (InputStream is = new FileInputStream(testFile)) {
-                DelphiLexer lexer = new DelphiLexer(CharStreams.fromStream(is));
-                CommonTokenStream tokens = new CommonTokenStream(lexer);
-                DelphiParser parser = new DelphiParser(tokens);
+        DelphiParser.ProgramContext program = parseProgram(inputPath.toFile());
+        DelphiLLVMGenerator generator = new DelphiLLVMGenerator();
+        String llvm = generator.generate(program);
 
-                ParseTree tree = parser.program();
+        Files.createDirectories(outputPath.getParent());
+        Files.writeString(outputPath, llvm, StandardCharsets.UTF_8);
 
-                if (parser.getNumberOfSyntaxErrors() > 0) {
-                    System.err.println("Parse failed: syntax errors found");
-                    System.out.println("Status: FAILED\n");
-                    failedCount++;
-                } else {
-                    System.out.println("Parse succeeded");
-                    System.out.println(">>> Program output:");
-                    System.out.println("-----------------------");
+        System.out.println("LLVM IR generated:");
+        System.out.println("  input : " + inputPath);
+        System.out.println("  output: " + outputPath);
+    }
 
-                    DelphiInterpreter interpreter = new DelphiInterpreter();
+    private static void runBatchCompile(String[] args) throws Exception {
+        if (args.length < 3) {
+            throw new IllegalArgumentException("batch mode requires <inputDir> <outputDir>");
+        }
 
-                    try {
-                        interpreter.visit(tree);
-                        System.out.println("-----------------------");
-                        System.out.println("Status: PASSED\n");
-                        passedCount++;
-                    } catch (Exception e) {
-                        System.out.println("-----------------------");
-                        System.err.println("Runtime error: " + e.getMessage());
-                        e.printStackTrace();
-                        System.out.println("Status: FAILED\n");
-                        failedCount++;
-                    }
-                }
-            } catch (Exception e) {
-                System.err.println("File read error:");
-                e.printStackTrace();
-                System.out.println("Status: FAILED\n");
-                failedCount++;
+        Path inputDir = Paths.get(args[1]).toAbsolutePath().normalize();
+        Path outputDir = Paths.get(args[2]).toAbsolutePath().normalize();
+        if (!Files.isDirectory(inputDir)) {
+            throw new IllegalArgumentException("Input directory not found: " + inputDir);
+        }
+
+        Files.createDirectories(outputDir);
+
+        List<Path> pasFiles = new ArrayList<>();
+        try (var stream = Files.list(inputDir)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".pas"))
+                    .sorted()
+                    .forEach(pasFiles::add);
+        }
+
+        if (pasFiles.isEmpty()) {
+            System.out.println("No .pas files found in " + inputDir);
+            return;
+        }
+
+        int ok = 0;
+        int fail = 0;
+
+        for (Path pas : pasFiles) {
+            try {
+                DelphiParser.ProgramContext program = parseProgram(pas.toFile());
+                String llvm = new DelphiLLVMGenerator().generate(program);
+
+                String fileName = pas.getFileName().toString();
+                int idx = fileName.lastIndexOf('.');
+                String stem = (idx > 0) ? fileName.substring(0, idx) : fileName;
+                Path out = outputDir.resolve(stem + ".ll");
+
+                Files.writeString(out, llvm, StandardCharsets.UTF_8);
+                System.out.println("[OK ] " + pas.getFileName() + " -> " + out.getFileName());
+                ok++;
+            } catch (Exception ex) {
+                System.out.println("[ERR] " + pas.getFileName() + " -> " + ex.getMessage());
+                fail++;
             }
         }
 
-        System.out.println("\n==============================================");
-        System.out.println("Test summary");
-        System.out.println("==============================================");
-        System.out.println("Total tests: " + testFiles.length + " files");
-        System.out.println("Passed: " + passedCount);
-        System.out.println("Failed: " + failedCount);
-        System.out.println("Pass rate: " + String.format("%.1f%%", (passedCount * 100.0 / testFiles.length)));
-        System.out.println("==============================================");
+        System.out.println("Batch compile summary: " + ok + " success, " + fail + " failed");
+    }
+
+    private static void runInterpret(String[] args) throws Exception {
+        if (args.length < 2) {
+            throw new IllegalArgumentException("interpret mode requires an input .pas file");
+        }
+
+        Path inputPath = Paths.get(args[1]).toAbsolutePath().normalize();
+        DelphiParser.ProgramContext program = parseProgram(inputPath.toFile());
+        DelphiInterpreter interpreter = new DelphiInterpreter();
+        interpreter.visit(program);
+    }
+
+    private static DelphiParser.ProgramContext parseProgram(File file) throws Exception {
+        try (InputStream is = new FileInputStream(file)) {
+            DelphiLexer lexer = new DelphiLexer(CharStreams.fromStream(is));
+            CommonTokenStream tokens = new CommonTokenStream(lexer);
+            DelphiParser parser = new DelphiParser(tokens);
+
+            DelphiParser.ProgramContext program = parser.program();
+            if (parser.getNumberOfSyntaxErrors() > 0) {
+                throw new IOException("Syntax errors found while parsing: " + file.getAbsolutePath());
+            }
+            return program;
+        }
+    }
+
+    private static void printUsage() {
+        System.out.println("Usage:");
+        System.out.println("  compile <input.pas> [output.ll]");
+        System.out.println("  batch <inputDir> <outputDir>");
+        System.out.println("  interpret <input.pas>");
     }
 }

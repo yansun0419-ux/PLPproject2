@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PLP Project 3 WASM Demo</title>
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --panel: #ffffff;
+      --ink: #1b1d1f;
+      --accent: #10634f;
+      --muted: #6a6e73;
+      --border: #d9d6cc;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: radial-gradient(circle at 20% 20%, #fff9e8, var(--bg));
+      color: var(--ink);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .card {
+      width: min(760px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-size: 1.4rem;
+    }
+
+    p {
+      margin-top: 0;
+      color: var(--muted);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    input {
+      flex: 1;
+      min-width: 260px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+
+    pre {
+      margin: 0;
+      background: #121416;
+      color: #d9f4eb;
+      border-radius: 10px;
+      padding: 14px;
+      min-height: 190px;
+      overflow: auto;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Project 3 EC: WASM Browser Demo</h1>
+    <p>Load a generated wasm file and invoke its default entry (_start or main).</p>
+
+    <div class="row">
+      <input id="wasmPath" value="loop_control.wasm" />
+      <button id="runBtn">Run WASM</button>
+    </div>
+
+    <pre id="log"></pre>
+  </main>
+
+  <script type="module" src="./run.js"></script>
+</body>
+</html>

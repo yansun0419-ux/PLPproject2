@@ -65,18 +65,24 @@ PowerShell usage:
 - Sample Pascal programs: `samples/*.pas`
 
 ## LLVM to WASM (EC Path)
-This part is document-ready but still needs local toolchain execution by you.
+This part now has a practical local flow.
 
 Recommended command flow:
 ```bash
 # 1) generate .ll
 mvn exec:java -Dexec.mainClass="org.example.Main" -Dexec.args="compile samples/loop_control.pas llvm_out/loop_control.ll"
 
-# 2) ll -> wasm (example via emcc or clang/wasm-ld pipeline)
-# emcc llvm_out/loop_control.ll -s STANDALONE_WASM=1 -O2 -o web/loop_control.wasm
+# 2) ll -> wasm using LLVM
+PowerShell: .\scripts\ll_to_wasm.ps1 -InputLl llvm_out/loop_control.ll -OutputWasm web/loop_control.wasm
 ```
 
-Then create a small `web/index.html` + JS loader and show browser execution in EC demo.
+The browser loader in `web/run.js` provides `printf` and `scanf` imports, and uses the module's exported memory to display output.
+
+To demo:
+1. Copy or generate `web/loop_control.wasm`
+2. Serve the repo as a static site
+3. Open `web/index.html`
+4. Run the wasm file from the page
 
 ## Submission Evidence Checklist
 For top-score submission quality, include at least:
